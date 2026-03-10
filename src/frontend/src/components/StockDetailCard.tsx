@@ -90,6 +90,8 @@ export function StockDetailCard({
     return <section className="panel detail-panel skeleton-card">从候选池或观察池里选一只股票查看计划。</section>;
   }
 
+  const isDefaultRuleMode = stock.parameter_source === "default" && (stock.model_snapshot?.training_sample_count ?? 0) === 0;
+
   const primaryRisks = [...stock.minus_factors, ...stock.reason_not_to_buy_now, ...stock.ineligible_reasons].filter(
     (item, index, source) => source.indexOf(item) === index
   );
@@ -357,7 +359,7 @@ export function StockDetailCard({
 
             {stock.model_snapshot ? (
               <div className="financial-card">
-                <h3>模型快照</h3>
+                <h3>{isDefaultRuleMode ? "评分快照" : "模型快照"}</h3>
                 <dl>
                   <div>
                     <dt>Alpha / 质量 / 风险</dt>
@@ -374,14 +376,23 @@ export function StockDetailCard({
                     <dt>综合强度</dt>
                     <dd>{stock.model_snapshot.confidence_score.toFixed(1)}</dd>
                   </div>
-                  <div>
-                    <dt>训练样本</dt>
-                    <dd>{stock.model_snapshot.training_sample_count}</dd>
-                  </div>
-                  <div>
-                    <dt>验证状态</dt>
-                    <dd>{stock.model_snapshot.validation_health}</dd>
-                  </div>
+                  {isDefaultRuleMode ? (
+                    <div>
+                      <dt>模式</dt>
+                      <dd>规则默认</dd>
+                    </div>
+                  ) : (
+                    <>
+                      <div>
+                        <dt>训练样本</dt>
+                        <dd>{stock.model_snapshot.training_sample_count}</dd>
+                      </div>
+                      <div>
+                        <dt>验证状态</dt>
+                        <dd>{stock.model_snapshot.validation_health}</dd>
+                      </div>
+                    </>
+                  )}
                   <div>
                     <dt>行业分位</dt>
                     <dd>{(stock.peer_percentiles.industry_total_score ?? 0).toFixed(1)}</dd>

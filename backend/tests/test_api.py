@@ -69,7 +69,11 @@ def test_sync_rank_detail_report_and_watchlist_flow(tmp_path):
     assert terminal["latest_trade_date"]
     with sqlite3.connect(settings.db_path) as connection:
         financial_count = connection.execute("SELECT COUNT(*) FROM financial_snapshot").fetchone()[0]
+        validation_count = connection.execute("SELECT COUNT(*) FROM validation_cache").fetchone()[0]
+        model_health_count = connection.execute("SELECT COUNT(*) FROM model_health_snapshot").fetchone()[0]
     assert financial_count > 0
+    assert validation_count == 0
+    assert model_health_count == 0
 
     status_payload = client.get("/data/status").json()
     assert status_payload["recommendation_status"] == "ready"
@@ -95,6 +99,9 @@ def test_sync_rank_detail_report_and_watchlist_flow(tmp_path):
     assert "recent_journal_entries" not in detail_payload
     assert detail_payload["parameter_version"] == "default"
     assert detail_payload["parameter_source"] == "default"
+    assert detail_payload["model_snapshot"]["training_sample_count"] == 0
+    assert detail_payload["model_snapshot"]["validation_health"] == "insufficient"
+    assert detail_payload["model_snapshot"]["calibration_bucket"] == "rules-default"
 
     report_payload = client.get("/reports/daily").json()
     assert report_payload["report_date"] == terminal["latest_trade_date"]

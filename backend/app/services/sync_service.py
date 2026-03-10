@@ -467,7 +467,7 @@ class SyncService:
             )
             computed = compute_snapshot(
                 self.repository.get_stock_meta(),
-                self.repository.get_price_map(as_of_date=latest_date),
+                self.repository.get_recent_price_map(latest_date, days=130),
                 self.repository.get_visible_financials(as_of_date=latest_date),
                 latest_date,
             )
@@ -490,10 +490,9 @@ class SyncService:
                 as_of_date=latest_date,
             )
             if self.analytics_service and self.strategy_service:
-                self.analytics_service.get_ranked_rows(
+                self.analytics_service.warm_default_candidates(
                     self.strategy_service.get_strategy("default"),
                     as_of_date=latest_date,
-                    limit=8,
                 )
 
             self._update_progress(

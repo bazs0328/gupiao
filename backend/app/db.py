@@ -603,6 +603,20 @@ class Repository:
             result.setdefault(item["code"], []).append(item)
         return result
 
+    def get_recent_closes(self, code: str, *, as_of_date: str, limit: int = 60) -> list[float]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT close
+                FROM daily_price
+                WHERE code = ? AND trade_date <= ?
+                ORDER BY trade_date DESC
+                LIMIT ?
+                """,
+                (code, as_of_date, limit),
+            ).fetchall()
+        return [float(row["close"]) for row in reversed(rows)]
+
     def get_latest_price_lookup(self, as_of_date: str | None = None) -> dict[str, dict]:
         as_of_date = as_of_date or self.get_latest_trade_date()
         if not as_of_date:
@@ -638,14 +652,20 @@ class Repository:
             ).fetchall()
         return [dict(row) for row in reversed(rows)]
 
-    def get_visible_financials(self, as_of_date: str | None = None) -> dict[str, dict]:
+    def get_visible_financials(self, as_of_date: str | None = None, codes: list[str] | None = None) -> dict[str, dict]:
         if not as_of_date:
             as_of_date = self.get_latest_trade_date()
         if not as_of_date:
             return {}
+        clauses = ["COALESCE(f.publish_date, f.report_date) <= ?"]
+        params: list[object] = [as_of_date]
+        if codes:
+            placeholders = ",".join("?" for _ in codes)
+            clauses.append(f"f.code IN ({placeholders})")
+            params.extend(codes)
         with self.connect() as connection:
             rows = connection.execute(
-                """
+                f"""
                 SELECT *
                 FROM (
                   SELECT
@@ -655,11 +675,11 @@ class Repository:
                       ORDER BY COALESCE(f.publish_date, f.report_date) DESC, f.report_date DESC
                     ) AS rn
                   FROM financial_snapshot f
-                  WHERE COALESCE(f.publish_date, f.report_date) <= ?
+                  WHERE {" AND ".join(clauses)}
                 )
                 WHERE rn = 1
                 """,
-                (as_of_date,),
+                params,
             ).fetchall()
         return {row["code"]: dict(row) for row in rows}
 
@@ -847,6 +867,23 @@ class Repository:
             ).fetchone()
         return json.loads(row["payload_json"]) if row else None
 
+    def get_validation_cache_on_or_before(self, as_of_date: str, config_key: str) -> dict | None:
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT payload_json
+                FROM validation_cache
+                WHERE as_of_date <= ?
+                ORDER BY as_of_date DESC
+                """,
+                (as_of_date,),
+            ).fetchall()
+        for row in rows:
+            payload = json.loads(row["payload_json"])
+            if payload.get("config_key") == config_key:
+                return payload
+        return None
+
     def replace_eligibility_snapshot(self, as_of_date: str, rows: list[dict]) -> None:
         with self.connect() as connection:
             connection.execute("DELETE FROM eligibility_snapshot WHERE as_of_date = ?", (as_of_date,))
@@ -883,10 +920,26 @@ class Repository:
                 SELECT code, payload_json
                 FROM eligibility_snapshot
                 WHERE as_of_date = ?
+                ORDER BY total_score DESC, confidence_score DESC, code
                 """,
                 (as_of_date,),
             ).fetchall()
         return {row["code"]: json.loads(row["payload_json"]) for row in rows}
+
+    def get_eligibility_snapshot_rows(self, as_of_date: str, limit: int | None = None) -> list[dict]:
+        query = """
+            SELECT payload_json
+            FROM eligibility_snapshot
+            WHERE as_of_date = ?
+            ORDER BY total_score DESC, confidence_score DESC, code
+        """
+        params: list[object] = [as_of_date]
+        if limit is not None:
+            query += " LIMIT ?"
+            params.append(limit)
+        with self.connect() as connection:
+            rows = connection.execute(query, params).fetchall()
+        return [json.loads(row["payload_json"]) for row in rows]
 
     def upsert_model_health_snapshot(self, as_of_date: str, status: str, payload: dict) -> None:
         with self.connect() as connection:

@@ -89,17 +89,17 @@ const stockDetailPayload = {
     alpha_score: 89,
     quality_score: 91,
     risk_score: 75,
-    alpha_prediction: 0.04,
-    downside_probability: 0.12,
-    confidence_score: 78.4,
-    training_window_start: "2025-01-03",
-    training_window_end: "2026-03-06",
-    training_sample_count: 120,
-    validation_health: "healthy" as const,
+    alpha_prediction: 0.78,
+    downside_probability: 0.25,
+    confidence_score: 88.2,
+    training_window_start: null,
+    training_window_end: null,
+    training_sample_count: 0,
+    validation_health: "insufficient" as const,
     precalibrated_total_score: 88.2,
-    calibration_bucket: "80-100",
-    bucket_sample_count: 96,
-    expected_excess_return: 0.032,
+    calibration_bucket: "rules-default",
+    bucket_sample_count: 0,
+    expected_excess_return: 0,
     agreement_count: 3
   },
   reason_not_to_buy_now: ["不建议追高"],
@@ -135,10 +135,10 @@ const stockDetailPayload = {
     financial_staleness_days: 8,
     factor_coverage_pct: 100,
     data_completeness_score: 100,
-    validation_health: "healthy" as const,
-    calibration_bucket: "80-100",
-    bucket_sample_count: 96,
-    expected_bucket_excess_return: 0.032,
+    validation_health: "insufficient" as const,
+    calibration_bucket: "rules-default",
+    bucket_sample_count: 0,
+    expected_bucket_excess_return: 0,
     agreement_count: 3,
     recommendation_blocked: false,
     block_reasons: [],
@@ -310,6 +310,109 @@ test("loads hidden research diagnostics only when advanced analysis is opened", 
 
   await waitFor(() => expect(mockApi.getResearchDiagnostics).toHaveBeenCalledTimes(1));
   expect(await screen.findByText("研究诊断")).toBeInTheDocument();
+});
+
+test("shows rule-scoring wording for default advanced analysis", async () => {
+  render(<App />);
+
+  const user = userEvent.setup();
+  await user.click(await screen.findByText("展开高级分析"));
+
+  expect(await screen.findByText("评分快照")).toBeInTheDocument();
+  expect(screen.getByText("规则默认")).toBeInTheDocument();
+  expect(screen.queryByText("训练样本")).not.toBeInTheDocument();
+  expect(screen.queryByText("验证状态")).not.toBeInTheDocument();
+});
+
+test("keeps model wording for research advanced analysis", async () => {
+  mockApi.getDataStatus.mockResolvedValue({
+    status: "ok",
+    provider: "akshare",
+    provider_mode: "real-a-share",
+    sync_mode: "daily_fast",
+    latest_sync: "2026-03-09T15:00:00",
+    latest_trade_date: "2026-03-09",
+    benchmark_code: "000300.SH",
+    equity_count: 12,
+    watchlist_count: 1,
+    warning_count: 0,
+    warnings: [],
+    data_quality_score: 96,
+    coverage_ratio: 0.99,
+    financial_lag_days: 42,
+    provider_warnings: [],
+    recommendation_status: "ready",
+    sync_stage: "completed",
+    sync_progress: 1,
+    failure_ratio: 0,
+    block_reasons: [],
+    research_status: "ready",
+    research_as_of_date: "2026-03-09",
+    parameter_version: "2026-03-09::balanced_quality_tilt",
+    research_sample_count: 168,
+    research_refresh_message: "研究结果已就绪，可手动刷新候选。"
+  });
+  mockApi.getStockDetail.mockResolvedValue({
+    ...stockDetailPayload,
+    parameter_version: "2026-03-09::balanced_quality_tilt",
+    parameter_source: "research" as const,
+    model_snapshot: {
+      ...stockDetailPayload.model_snapshot,
+      alpha_prediction: 0.04,
+      downside_probability: 0.12,
+      confidence_score: 78.4,
+      training_window_start: "2025-01-03",
+      training_window_end: "2026-03-06",
+      training_sample_count: 120,
+      validation_health: "healthy" as const,
+      calibration_bucket: "80-100",
+      bucket_sample_count: 96,
+      expected_excess_return: 0.032
+    }
+  });
+  mockApi.getRankings.mockResolvedValue({
+    ...rankingsPayload,
+    parameter_version: "2026-03-09::balanced_quality_tilt",
+    parameter_source: "research" as const
+  });
+  mockApi.getDailyReport.mockResolvedValue({
+    report_date: "2026-03-09",
+    market_regime: "neutral",
+    summary: "研究参数已应用。",
+    candidates: [
+      {
+        code: "600519",
+        name: "贵州茅台",
+        industry: "消费白马",
+        current_price: 1735,
+        total_score: 90.4,
+        explanation_summary: "研究参数已应用。",
+        confidence_score: 81.2,
+        tier: "A" as const,
+        risk_flags: ["不建议追高"],
+        position_plan: rankingsPayload.items[0].position_plan
+      }
+    ],
+    capital_allocation_hint: "研究参数已应用。",
+    action_checklist: ["候选已切换到研究参数。"],
+    do_not_chase_flags: ["不建议追高"],
+    position_plans: [rankingsPayload.items[0].position_plan],
+    watchlist_hits: [],
+    generated_at: "2026-03-09T15:01:00",
+    actionable: true,
+    block_reasons: [],
+    parameter_version: "2026-03-09::balanced_quality_tilt",
+    parameter_source: "research" as const
+  });
+
+  render(<App />);
+
+  const user = userEvent.setup();
+  await user.click(await screen.findByText("展开高级分析"));
+
+  expect(await screen.findByText("模型快照")).toBeInTheDocument();
+  expect(screen.getByText("训练样本")).toBeInTheDocument();
+  expect(screen.getByText("验证状态")).toBeInTheDocument();
 });
 
 test("polls sync runs until completion after clicking sync", async () => {

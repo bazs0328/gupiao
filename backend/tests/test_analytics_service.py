@@ -49,13 +49,66 @@ def test_default_rankings_and_internal_validation_cache_are_consistent(tmp_path)
     assert shortlist_date == latest_trade_date
     assert rows
     assert len(shortlist) <= config.rebalance.top_n
-    assert payload["validation_summary"].current_model_health in {"healthy", "degraded", "insufficient"}
+    assert payload["validation_summary"].current_model_health == "insufficient"
     assert shortlist_payload["block_reasons"] == payload["block_reasons"]
+    assert repository.get_eligibility_snapshot(latest_trade_date)
+    assert rows[0]["confidence_score"] == rows[0]["total_score"]
 
     cached = repository.get_validation_cache(latest_trade_date)
-    assert cached is not None
-    assert cached["config_key"] == analytics_service._config_key(default_strategy_config())
-    assert repository.get_latest_model_health() is not None
+    assert cached is None
+    assert repository.get_latest_model_health() is None
+
+
+def test_default_path_skips_training_for_warmup_and_detail(tmp_path, monkeypatch):
+    repository, strategy_service, analytics_service = build_services(tmp_path)
+    config = strategy_service.get_strategy()
+    latest_trade_date = repository.get_latest_trade_date()
+    _ranked_date, ranked_rows, _ = analytics_service.get_ranked_rows(config, as_of_date=latest_trade_date, limit=5)
+    top_code = ranked_rows[0]["code"]
+
+    with repository.connect() as connection:
+        connection.execute("DELETE FROM eligibility_snapshot WHERE as_of_date = ?", (latest_trade_date,))
+
+    reloaded_service = AnalyticsService(repository, "000300.SH")
+
+    def fail(*_args, **_kwargs):
+        raise AssertionError("default path should not invoke training or validation builders")
+
+    monkeypatch.setattr(reloaded_service, "_training_samples", fail)
+    monkeypatch.setattr(reloaded_service, "_train_models", fail)
+    monkeypatch.setattr(reloaded_service, "_build_validation_artifacts", fail)
+
+    ranked_date, rows, _payload = reloaded_service.warm_default_candidates(config, as_of_date=latest_trade_date)
+    assert ranked_date == latest_trade_date
+    assert rows
+
+    analysis_date, entry, analysis, _ = reloaded_service.get_analysis_for_code(top_code, config, as_of_date=latest_trade_date)
+    assert analysis_date == latest_trade_date
+    assert entry is not None
+    assert analysis is not None
+    assert analysis["model_snapshot"]["training_sample_count"] == 0
+    assert analysis["model_snapshot"]["calibration_bucket"] == "rules-default"
+
+
+def test_reloaded_default_rankings_use_persisted_snapshot(tmp_path, monkeypatch):
+    repository, strategy_service, analytics_service = build_services(tmp_path)
+    latest_trade_date = repository.get_latest_trade_date()
+    config = strategy_service.get_strategy()
+
+    analytics_service.get_ranked_rows(config, as_of_date=latest_trade_date, limit=5)
+
+    reloaded_service = AnalyticsService(repository, "000300.SH")
+
+    def fail_if_recomputed(*_args, **_kwargs):
+        raise AssertionError("default rankings should load from persisted snapshot")
+
+    monkeypatch.setattr(reloaded_service, "_build_lightweight_default_payload", fail_if_recomputed)
+
+    ranked_date, rows, payload = reloaded_service.get_ranked_rows(config, as_of_date=latest_trade_date, limit=5)
+
+    assert ranked_date == latest_trade_date
+    assert rows
+    assert payload["validation_summary"].current_model_health == "insufficient"
 
 
 def test_strategy_weights_change_main_analytics_rankings(tmp_path):
@@ -124,7 +177,12 @@ def test_custom_config_does_not_overwrite_persisted_default_cache(tmp_path):
     repository, strategy_service, analytics_service = build_services(tmp_path)
     latest_trade_date = repository.get_latest_trade_date()
 
-    analytics_service.get_ranked_rows(strategy_service.get_strategy(), as_of_date=latest_trade_date, limit=5)
+    analytics_service._build_validation_artifacts(
+        default_strategy_config(),
+        latest_trade_date,
+        allow_stale=False,
+        compute_if_missing=True,
+    )
     default_cache = repository.get_validation_cache(latest_trade_date)
 
     custom_config = StrategyConfig(

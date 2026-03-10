@@ -43,7 +43,7 @@ class RankingService:
         if not entry or not analysis:
             raise HTTPException(status_code=404, detail="Stock not found.")
 
-        financial_raw = self.repository.get_visible_financials(as_of_date=latest_date).get(code)
+        financial_raw = self.repository.get_visible_financials(as_of_date=latest_date, codes=[code]).get(code)
         financial_snapshot = None
         if financial_raw:
             cashflow_quality = (
