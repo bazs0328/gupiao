@@ -1,0 +1,41 @@
+{
+  "name": "gupiao-desktop-mvp",
+  "version": "0.1.0",
+  "description": "A-share desktop end-of-day stock research assistant.",
+  "author": "bazs0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k \"npm:dev:web\" \"npm:dev:api\"",
+    "dev:web": "cross-env VITE_BACKEND_BASE_URL=http://127.0.0.1:8000 vite",
+    "dev:api": "node scripts/run-python.mjs -m backend.app.main",
+    "research:refresh": "node scripts/run-python.mjs -m backend.app.research_cli --mode incremental",
+    "desktop": "npm run build:web && node scripts/run-python.mjs desktop_launcher.py",
+    "build": "npm run build:web",
+    "build:web": "vite build",
+    "lint": "tsc --noEmit -p tsconfig.json",
+    "test:web": "vitest run",
+    "test:api": "node scripts/run-python.mjs -m pytest backend/tests",
+    "test": "npm run test:web && npm run test:api",
+    "package": "npm run build && node scripts/run-python.mjs --prefer-windows scripts/package_desktop.py"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.1.0",
+    "@testing-library/user-event": "^14.5.2",
+    "@types/node": "^22.10.1",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.2",
+    "cross-env": "^7.0.3",
+    "jsdom": "^28.1.0",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5",
+    "vitest": "^2.1.8"
+  }
+}
